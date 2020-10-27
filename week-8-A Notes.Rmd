@@ -1,0 +1,152 @@
+---
+title: "Week 8, Day 1"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(PPBDS.data)
+library(rstanarm)
+library(tidyverse)
+
+# Recall that Enos (2014) actually looks at a measure of change in attitude
+# toward immigration, rather than simply at the ending attitude. Let's create
+# such a variable and try to model it.
+
+week_8 <- trains %>% 
+  mutate(att_chg = att_end - att_start) %>% 
+  select(att_chg, gender, party, treatment)
+  
+```
+
+Weeks 7, 8 and 9 are the core of the class. We have a question. We have some data. How should we use the data to answer the question? Using Wisdom, we first decide if the question and the data are "close enough" that we can consider them to both be part of the same population. With Justice, we create a mathematical model which describes the connection between the outcome we want to explain/understand and the covariates which might be connected to it. Courage takes us from mathematics to code, creating a model, including posterior distributions for all its parameters. The last step is to use that model to answer the question with which we started, with Temperance.
+
+
+
+
+## Scene 1
+
+**Prompt:** Let's estimate and interpret three models. In each case, `att_chg` is the outcome variable, the thing we are trying to understand and explain. Use `stan_glm()` to create and print a model with `att_chg` (the dependent or outcome variable) as a function of the indicated independent (or predictor) variable. Do not use an intercept. In each case, write three sentences of interpretation, with a special focus on whether the model is predictive or causal. For causal models, indicate how you might estimate the causal effect.
+
+* `att_chg` as a function of `gender`
+
+
+* `att_chg` as a function of `party`
+
+
+* `att_chg` as a function of `treatment`
+
+
+```{r scene-1-a}
+fit_1 <- stan_glm(att_chg ~ gender - 1, data = week_8, refresh = 0)
+
+print(fit_1, detail = FALSE)
+```
+
+```{r scene-1-b}
+fit_2 <- stan_glm(att_chg ~ party - 1, data = week_8, refresh = 0)
+
+print(fit_2, detail = FALSE)
+```
+
+```{r scene-1-c}
+fit_3 <- stan_glm(att_chg ~ treatment - 1, data = week_8, refresh = 0)
+
+print(fit_3, detail = FALSE)
+```
+
+
+
+
+**Comments:** The most difficult part of teaching class this week and next is that, paradoxically, there is so little code to write. It is too easy for students to think that they are *done*, that they *understand*, because they have a few lines of code which produce something. You must ensure that they understand what the results *mean*. And the only way to do that is to have them tell you, to ask them to interpret. Perhaps the requirement for written sentences will help, but direct questions from teaching staff is the only way to be sure.
+
+* It is obvious that `treatment` as a covariate means a causal model. It is easy to imagine two potential outcomes. And the fact that treatment assignment is random means that we can estimate the average causal effect by looking at the difference between average treatment and average control outcomes. And --- bonus! --- those are the very definitions of $\beta_1$ and $\beta_2$ in our regression. This example is the perfect excuse to revisit Chapter 3. Indeed, the only difference between this example and much of the discussion from Chapter 3 is the change in outcome variable from `att_end` to `att_chg`.
+
+* It is (mostly?) obvious that `gender` as a covariate means a predictive model. (Let's define `gender` here as "gender assigned at birth." Gender identity, and changes therein, is a politically fraught topic which I, at least, don't intend to delve into with my students. Other staff are free to do as they see fit.) Remind students of the motto from Chapter 3: *No causation without manipulation.* If there is no way --- without a time machine? --- to change someone's gender as assigned at birth, then there is only one potential outcome. By definition, the model must be predictive. There is no way to determine the causal effect of gender because there is only one potential outcome. Discussing a causal effect is incoherent in this context. Feel free to discuss other covariates (race? parental education?) which are similar.
+
+* `liberal` is the most interesting case because it is possible to interpret this model as either predictive or causal. There is no "right" answer. 
+
+  + We might think of this model as purely predictive. Your political views --- at least for today --- are fixed. You can no more manipulate your ideology than you can manipulate your age. It is part of what makes you you. In that interpretation, there is only one outcome. You are, for example, `liberal` and your `att_chg` is whatever it is. It is meaningless to discuss, as a potential outcome, what your `att_chg` would have been had you not been liberal.
+  
+  + We might think of this model as causal because people do change their ideologies sometimes. It is possible to imagine two worlds: one in which you are liberal and one in which you are not. All (?) other aspects of the world are the same. The causal effect of `liberal` on `att_chg` is the difference between your `att_chg` if you are TRUE for `liberal` and your `att_chg` if you are FALSE for `liberal`. But is there a way to change someone's politics? Maybe? 
+  
+  + If we decide that the model is causal, then we might estimate the average treatment effect of `liberal` on `att_chg` as simply the difference between average `att_chg` for liberals versus average `att_chg` for non-liberals. But that would be problematic, for all the usual reasons, because liberalness was not randomly assigned. So, any difference in averages might due to a third factor which is correlated with both `liberal` and `att_chg`. 
+
+
+## Scene 2
+
+**Prompt:** For the model with `att_chg` as a function of `treatment`, create posterior probability densities for the two important parameters. Write a paragraph interpreting the meaning of those posteriors. 
+
+```{r scene-2}
+fit_3 %>% 
+  as_tibble() %>% 
+  select(-sigma) %>% 
+  rename(Treated = treatmentTreated,
+         Control = treatmentControl) %>% 
+  pivot_longer(cols = Treated:Control,
+               names_to = "parameter",
+               values_to = "attitude") %>% 
+  ggplot(aes(x = attitude, fill = parameter)) +
+    geom_histogram(aes(y = after_stat(count/sum(count))),
+                   alpha = 0.5, 
+                   bins = 100, 
+                   position = "identity") +
+    labs(title = "Posterior Probability Distributions",
+         subtitle = "Average change in attitude toward immigration on -12 to +12 Scale",
+         x = "Average Attitude Change",
+         y = "Probability") +
+    scale_y_continuous(labels = scales::percent_format()) + 
+    guides(fill = guide_legend(reverse = TRUE, 
+                               title = "Parameter")) +
+    theme_classic()
+
+```
+
+
+**Comments:** There is a lot going on here, almost none of it in the code itself. Highlights:
+
+* What does an attitude change of 0.5 for treated individuals mean? Interpreting the magnitude of coefficients is important. Is 0.5 big or small? There are two common approaches. First, we could measure the 0.5 in terms of standard deviations of `att_chg`, which is about 1.5. So, this is a movement of about 1/3 a standard deviation or, colloquially, one-third a sigma. Second, we could put the 0.5 in the context of something we understand. For example, the difference between average `att_start` between Republicans and Democrats is about 1.3. So, treatment would move the typical Democrat about 40% of the way to being a Republican.
+
+* Does the -0.5 estimate for control make sense? Not really! Nothing happened to the controls! There were no Spanish-speakers on their platforms! They just did their usual commute. Why should their attitudes toward immigration change? Lots of potential discussion topics here. 
+
+* Does it make more sense to look at `att_chg`, as we do here, or at `att_end`, as we do in the book? As usual, there is no right answer. 
+
+* If you switch out `geom_histogram()` for `geom_density()`, the curves will have the same shape. Both will be posterior probabilities densities, meaning that the area under the terms sums (with `geom_histogram()`) or integrates (with `geom_density()`) to 1. *However*, things can be tricky because the y-axis with `geom_density()` will often go above 1. How can that be? Recall that, if the raw numbers on the x-axis are small enough in absolute value, then the only way to the area under the curve to equal one is to have the curve go quite high. So (credit to Tyler), although the curves have the same shape, the only one for which the y-axis may be considered a probability is the (appropriately scaled) histogram.
+
+* Force them to write that paragraph. Really write it. Switch the screen-sharing duties from student-to-student a couple of times to ensure that all students are writing the paragraph. If a student isn't either writing or coding, he isn't really learning.
+
+* There are a couple of tricks in the code: `fill`, `alpha`, `position`, `scales::percent_format()` and `guide_legend()`. These will be new to many students. Give them advice --- via a guided tour of your Google expertise --- as to how we figure out how to do things in R.
+
+
+## Scene 3
+
+**Prompt:** Create a plot of the the posterior for the average treatment effect. Write a paragraph interpreting the plot.
+
+
+```{r scene-3}
+fit_3 %>% 
+  as_tibble() %>% 
+  mutate(ate = treatmentTreated - treatmentControl) %>% 
+  ggplot(aes(x = ate)) +
+    geom_histogram(aes(y = after_stat(count/sum(count))),
+                   bins = 100) +
+    labs(title = "Posterior Probability Distribution",
+         subtitle = "Average treatment effect on immigration attitude",
+         x = "Average Attitude Change",
+         y = "Probability") +
+    scale_y_continuous(labels=scales::percent_format()) + 
+    theme_classic()
+
+```
+
+
+**Comments:** Recall that the average treatment effect, in a case with random assignment, can be defined as the difference between the average outcome for treatment and the average outcome for control. We (conveniently!) defined $\beta_1$ and $\beta_2$ to be precisely those things! So, to plot the posterior of the ATE, we can simply subtract  $\beta_2$ from $\beta_1$. This is both obvious and subtle. *We can manipulate posterior probability distributions in the same way that we manipulate numbers.* Want the difference? Just subtract!
+
+* The most difficult conceptually leap, I think, is the one from real concept in the world --- like the average `att_chg` for the treated --- to a specific parameter in the model, like $\beta_1$ in this case. This is hard. And it gets harder later, when the meaning of the parameters becomes more subtle and even, in some cases, impenetrable. 
+
+* Make sure that every student writes the paragraph. If they can't put their understanding of the posterior probability distribution of average treatment effect into words, then they don't really understand it. 
+
+* If a group gets done too quickly, challenge them to turn this code into a function called `my_ate()` which takes two arguments, a tibble with the necessary data and a `restriction` which is something which might be passed to `filter()`, thereby restricting the data set before calculating the posterior. Hint: `filter(!! rlang::parse_expr(restriction))`. We will revisit this challenge problem problem on Thursday.
+
+
+
